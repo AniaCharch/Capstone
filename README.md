@@ -9,7 +9,7 @@ Online streaming platforms such as Spotify and YouTube play a crucial role in sh
 
 ### Problem Statement: What are the needed characteristics for the song and artists to reach top trending charts faster?
 
-This Capstone project is conducted for the American University of Armenia and includes 
+#### This Capstone project is conducted for the American University of Armenia and includes 
 
 1.  Data exploration and statistical analysis
 2.  Relationship exploration of features
