@@ -1,0 +1,856 @@
+---
+title: "Untitled"
+author: "Anna Charchyan"
+date: "2024-05-02"
+output: pdf_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(patchwork)
+library(ggplot2)
+library(ggthemes)
+library(hrbrthemes)
+library(lubridate)
+library(forecast)
+library(Rtsne)
+library(stats)
+library(cluster)
+library(tidymodels)
+library(corrplot)
+library(scales) 
+library(factoextra)
+library(gridExtra)
+library(grid) 
+library(cowplot)
+```
+
+
+```{r, warning=FALSE, message=TRUE}
+dt1 <- read.csv("spotify_songs.csv", header = TRUE)
+dt1$track_album_release_date<-dmy(dt1$track_album_release_date)
+years<-c(2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020)
+dt2<-dt1%>% rename(artist_name=track_artist, artist_genres=playlist_genre, album=track_album_name)%>% mutate(year = year(ymd(track_album_release_date)))%>%filter(year %in% years)
+indices <- sample(seq_len(nrow(dt2)), size = 0.2 * nrow(dt2))
+dt3 <- dt2[indices, ]
+
+dtt <- read.csv("playlist_to2023.csv", header = TRUE)
+combined_spoty<-bind_rows(dt3, dtt)
+var<-c("track_popularity","danceability", "energy","key","loudness","mode", "speechiness","acousticness", "instrumentalness","liveness","valence","tempo","duration_ms","year","artist_genres","artist_name","album" )
+dtt<-dtt%>%select(all_of(var))
+dt3<-dt3%>%select(all_of(var))
+
+combined_spoty<-bind_rows(dt3, dtt)
+dt<-combined_spoty
+
+dt$artist_name <- ifelse(dt$artist_name == "Beyonc\xe9", "Beyonce", dt$artist_name)
+dt$artist_name <- ifelse(dt$artist_name == "Arc\xe1ngel", "Arcangel", dt$artist_name)
+dt$artist_name <- ifelse(dt$artist_name == "Victoria Mon\xe9t", "Victoria Monet", dt$artist_name)
+dt$artist_name <- ifelse(dt$artist_name == "ROSAL\xcdA", "ROSAL", dt$artist_name)
+```
+
+
+```{r top-50-artists}
+top_artists <- dt %>%
+  group_by(artist_name) %>%
+  summarise(total_popularity = sum(track_popularity)) %>%
+  top_n(50, wt = total_popularity) %>%
+  arrange(desc(total_popularity)) %>%
+  mutate(artist_rank = row_number())
+
+# Define colors for the gradient start and end
+start_color <- "#ff0096"  
+end_color <- "#351c75"  
+
+# Create a gradient function
+get_gradient_color <- function(rank, max_rank) {
+  colorRampPalette(c(start_color, end_color))(max_rank)[rank]
+}
+
+# Apply the gradient function to each artist based on rank
+top_artists$color <- sapply(top_artists$artist_rank, get_gradient_color, max_rank = nrow(top_artists))
+
+# Create the plot
+ggplot_object <- ggplot(top_artists, aes(x = reorder(artist_name, -total_popularity), y = total_popularity)) +
+  geom_bar(aes(fill = I(color)), stat = "identity", width = 0.9) +
+  scale_fill_identity() +
+  labs(x = "Artist Names", y = "Total Streams (in millions)") +
+  ggtitle("Top 50 Artists by Popularity on Chart Spotify 2010-2023") +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)  # Uses comma for thousands separator
+
+# Print the plot
+print(ggplot_object)
+```
+***Fig.1***
+
+Figure 1 represents Top 50 Most popular artist in the dataset with Drake and Taylor Swift sitting on the first and second spot respectively.
+
+
+# Top 5 Genres by Popularity on Chart Spotify 2010-2023
+```{r top-5-genres}
+genre_popularity <- dt %>%
+  group_by(artist_genres) %>%
+  summarise(total_popularity = sum(track_popularity)) %>%
+  arrange(desc(total_popularity)) %>%
+  dplyr::slice(1:5)  # Select top 6 Genres
+
+# Create the bar plot
+ggplot(genre_popularity, aes(x = reorder(artist_genres, -total_popularity), y = total_popularity)) +
+  geom_bar(stat = "identity", fill = "#ff0096", width = 0.9) +
+  labs(x = "Genres", y = "Total Popularity") +
+  ggtitle("Top 5 Genres by Popularity on Chart Spotify 2010-2023") +
+  theme_minimal() +  # Start with a minimal theme
+  theme(
+    plot.background = element_rect(fill = "white", color = "white"),  # Set the plot background color to white
+    panel.background = element_rect(fill = "white", color = "white"),  # Set the panel background color to white
+    axis.text.x = element_text(angle = 75, hjust = 1)  # Adjust text orientation and justification
+  )
+```
+***Fig.2***
+Figure 2 represents Top 5 Genres in the dataset, pop is the most popular in the dataset, followed by edm and latin, while rap & r&b are the 4th and 5th most popular genre.
+
+
+# Density Plots
+```{r, fig.width=12, fig.height=10, density-plots}
+# Density Plot for Danceability
+p1 <- ggplot(dt, aes(x = danceability)) +
+  geom_density(fill = "#7f82e5", alpha = 0.5) +
+  labs(x = "", y = "Density") +
+  ggtitle("Danceability") +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+# Density Plot for Energy
+p2 <- ggplot(dt, aes(x = energy)) +
+  geom_density(fill = "magenta", alpha = 0.5) +
+  labs(x = "", y = "Density") +
+  ggtitle("Energy") +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+# Density Plot for Acousticness
+p3 <- ggplot(dt, aes(x = acousticness)) +
+  geom_density(fill = "#00c190", alpha = 0.5) +
+  labs(x = "", y = "Density") +
+  ggtitle("Acousticness") +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+# Density Plot for Loudness
+p4 <- ggplot(dt, aes(x = loudness)) +
+  geom_density(fill = "#8060c3", alpha = 0.5) +
+  labs(x = "", y = "Density") +
+  ggtitle("Loudness") +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+# Density Plot for Speechiness
+p5 <- ggplot(dt, aes(x = speechiness)) +
+  geom_density(fill = "#ffb6c1", alpha = 0.5) +
+  labs(x = "", y = "Density") +
+  ggtitle("Speechiness") +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+# Density Plot for Tempo
+p6 <- ggplot(dt, aes(x = tempo)) +
+  geom_density(fill = "#ebc157", alpha = 0.5) +
+  labs(x = "", y = "Density") +
+  ggtitle("Tempo") +
+  theme_minimal() +
+  theme(plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5))
+
+grid_plots <- grid.arrange(
+  p1, p2, p3, p4, p5, p6,
+  nrow = 3,
+  ncol = 2,
+  top = textGrob("Density Plots", 
+                 gp = gpar(fontface = "bold", fontsize = 20))
+)
+```
+***Fig3***
+Figure 3 represents density plot of danceability, energy, acousticness, loudness, speechiness and tempo.
+
+
+```{r minor-mode}
+options(repr.plot.width=20, repr.plot.height=7)
+
+# Filter data for mode 0 and mode 1 using the dataset 'dt'
+mode_0_data <- subset(dt, mode == 0)
+mode_1_data <- subset(dt, mode == 1)
+
+# Create separate bar plots for mode 0 and mode 1 with solid colors
+p_mode_0 <- ggplot(mode_0_data, aes(x = tempo, fill = "Mode 0")) +
+  geom_histogram(binwidth = 5, color = "white", fill = "#4e2f41") +
+  labs(title = "Minor", x = "Tempo", y = "Count") +
+  theme_minimal()
+
+p_mode_1 <- ggplot(mode_1_data, aes(x = tempo, fill = "Mode 1")) +
+  geom_histogram(binwidth = 5, color = "white", fill = "#ff0096") +
+  labs(title = "Major", x = "Tempo", y = "Count") +
+  theme_minimal()
+
+# Combine plots side by side
+grid.arrange(p_mode_0, p_mode_1, ncol = 2)
+```
+***Fig4***
+Figure 9 represents visual comparison of the tempo distributions between songs in minor (mode 0) and major (mode 1).
+
+```{r minor-mode-boxplot}
+boxplot1 <- ggplot(dt, aes(x = as.factor(mode) , y = track_popularity)) +
+geom_boxplot(fill = "white", color = "black") +
+labs(x = "Mode", y = "Artist Popularity") +
+ggtitle("Box Plot of Artist Popularity by Mode") +
+theme_minimal() +  # Start with minimal theme
+theme(axis.text.x = element_text(angle = 45, hjust = 1),axis.title = element_text(size = 12), plot.title = element_text(size = 14, face = "bold"), plot.background = element_rect(fill = "white"))
+
+boxplot1
+```
+***Fig5***
+
+Figure 10 represents a boxplot of artist popularity by mode, which shows no significant difference in the mean track popularity between different modes. This suggests that mode does not have a significant impact on track popularity.
+
+```{r}
+# Create the density plot
+ggplot(dt, aes(x = track_popularity, fill = factor(key))) +
+  geom_density(alpha = 0.3) +  # Reduced alpha for more transparency
+  labs(x = "Popularity", y = "Density") +
+  ggtitle("Density Plot of Popularity by Key") +
+  theme_minimal() +  # Start with a minimal theme
+  theme(
+    plot.background = element_rect(fill = "white", color = "white"),  # Set the plot background color to white
+    panel.background = element_rect(fill = "white", color = "white"),  # Set the panel background color to white
+    legend.position = "right"  # Adjust legend position if needed
+  )
+```
+***Fig6***
+
+Figure 11 represents desnity plot of popularity by key. There is a significant overlap among several keys, especially in the mid-range of popularity scores, indicating that these popularity levels are common across multiple keys.
+
+```{r key-and-modes}
+## Set the plot size
+options(repr.plot.width=12, repr.plot.height=6)
+
+# Create a new column for key names
+dt$key_name <- factor(dt$key, levels = 0:11,
+                                labels = c("C", "C#", "D", "D#", "E", "F",
+                                           "F#", "G", "G#", "A", "A#", "B"))
+
+# Group data by key, mode, and key name, then count the number of songs
+key_mode_counts <- aggregate(track_popularity ~ key + mode + key_name, data = dt, FUN = length)
+
+# Rename the count column
+colnames(key_mode_counts)[4] <- "count"
+
+# Create the bar plot
+ggplot(key_mode_counts, aes(x = key_name, y = count, fill = factor(mode))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Count of Songs by Key and Mode", x = "Key", y = "Count") +
+  scale_fill_manual(values = c("#4e2f41", "#ff0096"), name = "Mode") +
+  theme_minimal()
+```
+***Fig7***
+
+Figure 12 represents the distribution of songs across different musical keys and modes. It helps in understanding whether certain keys or modes are more common
+
+```{r, change-in-features,warning=FALSE, message=TRUE, fig.width=12, fig.height=10}
+# Calculate the average danceability per year
+danceability_avg <- dt %>%
+  group_by(year) %>%
+  summarise(prom_danceability = mean(danceability, na.rm = TRUE), .groups = 'drop')
+
+# Create the line plot for danceability data
+f_danceability <- ggplot(danceability_avg, aes(x = year, y = prom_danceability)) +
+  geom_line(color = "#ffcccb", size = 1.5) +
+  geom_point(color = "#a6cfcb", size = 3) +
+  labs(title = 'Danceability',
+       y = 'Average Danceability',
+       x = 'Years') +
+  scale_x_continuous(breaks = seq(min(dt$year), max(dt$year), by = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+tempo_avg <- dt %>%
+  group_by(year) %>%
+  summarise(prom_tempo = mean(tempo, na.rm = TRUE), .groups = 'drop')
+
+# Create the line plot for tempo data
+f_tempo <- ggplot(tempo_avg, aes(x = year, y = prom_tempo)) +
+  geom_line(color = "#e1beff", size = 1.5) + 
+  geom_point(color = "#ba4487", size = 3) + 
+  labs(title = 'Tempo',
+       y = 'Average Tempo (BPM)',
+       x = 'Years') +
+  scale_x_continuous(breaks = seq(min(dt$year), max(dt$year), by = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+# Calculate the average valence per year
+valence_avg <- dt %>%
+  group_by(year) %>%
+  summarise(prom_valence = mean(valence, na.rm = TRUE), .groups = 'drop')
+
+# Create the line plot for valence data
+f_valence <- ggplot(valence_avg, aes(x = year, y = prom_valence)) +
+  geom_line(color = "#f1c232", size = 1.5) + 
+  geom_point(color = "purple", size = 3) + 
+  labs(title = 'Valence',
+       y = 'Average Valence',
+       x = 'Years') +
+  scale_x_continuous(breaks = seq(min(dt$year), max(dt$year), by = 1)) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+# Calculate the average danceability per year
+energy_avg <- dt %>%
+  group_by(year) %>%
+  summarise(prom_energy = mean(energy, na.rm = TRUE), .groups = 'drop')
+
+# Create the line plot for danceability data
+f_energy <- ggplot(energy_avg, aes(x = year, y = prom_energy)) +
+  geom_line(color = "midnightblue", size = 1.5) +
+  geom_point(color = "#cc0000", size = 3) + 
+  labs(title = 'Energy',
+       y = 'Average Energy',
+       x = 'Years') +
+  scale_x_continuous(breaks = seq(min(dt$year), max(dt$year), by = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+grid_plots <- grid.arrange(
+  f_danceability, f_tempo, f_valence, f_energy,
+  nrow = 2, 
+  ncol = 2,
+  top = textGrob("Change in Song Characteristics Over the Years", 
+                 gp = gpar(fontface = "bold", fontsize = 23))
+)
+```
+***Fig8***
+
+Figure 13 represents graph of change of features over the years 2000-2023. It can be seen that there was a downward from years 2007-2016 and sudden upward starting from 2016 in danceability. It can be seen that there was a sudden upward from years 2006-2009 in tempo. It can be seen that there was trending downward starting from 2010 in valence. It is evident that from 2007 to 2014, the energy levels of the songs reached their peak in energy.
+
+```{r,positivity-energy, warning=FALSE, message=TRUE, fig.width=8, fig.height=6}
+certain_genre <- dt %>%
+  filter(artist_genres %in% c("pop", "rap", "rock", "latin", "r&b", "edm"))
+
+ggplot(data = certain_genre, aes(x = valence, y = energy)) +
+  geom_point() +
+  ggtitle("Correlation between Positivity and Energy") +
+  facet_wrap(~artist_genres) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 15, face = "bold"), # Center and increase size of title
+    panel.spacing = unit(1, "lines")  # Adjust the gap between plots
+  )
+```
+***Fig12***
+
+Figure 17 presents scatter plots analyzing the correlation between positivity (valence) and energy across several music genres including Latin, Pop, R&B, Rap, and Rock. In these plots, Latin and Pop genres show a high concentration of songs with both high positivity and energy, suggesting a preference for vibrant and dynamic tracks. R&B displays a broad spread, indicating a mix of both slow and energetic songs. Rap reveals a diverse range of both low and high values in valence and energy, highlighting the genre's varied musical styles. Rock consistently shows high energy regardless of positivity, reflecting its typically intense nature
+
+```{r, popularity-correlation, warning=FALSE, message=TRUE, fig.width=12, fig.height=10}
+c1<-ggplot(data=dt)+geom_point(mapping=aes(x=danceability, y=track_popularity))+geom_smooth(mapping=aes(x=danceability, y=track_popularity))+ggtitle("Track Popularity and Danceability")
+c2<-ggplot(data=dt)+geom_point(mapping=aes(x=energy, y=track_popularity))+geom_smooth(mapping=aes(x=energy, y=track_popularity))+ggtitle("Track Popularity and Energy")
+c3<-ggplot(data=dt)+geom_point(mapping=aes(x=loudness, y=track_popularity))+geom_smooth(mapping=aes(x=loudness, y=track_popularity))+ggtitle("Track Popularity and Loudness")
+c4<-ggplot(data=dt)+geom_point(mapping=aes(x=speechiness, y=track_popularity))+geom_smooth(mapping=aes(x=speechiness, y=track_popularity))+ggtitle("Popularity and Speechiness")
+c5<-ggplot(data=dt)+geom_point(mapping=aes(x=acousticness, y=track_popularity))+geom_smooth(mapping=aes(x=acousticness, y=track_popularity))+ggtitle("Track Popularity and Acousticness")
+c6<-ggplot(data=dt)+geom_point(mapping=aes(x=instrumentalness, y=track_popularity))+geom_smooth(mapping=aes(x=instrumentalness, y=track_popularity))+ggtitle("Track Popularity and Instrumentalness")
+c7<-ggplot(data=dt)+geom_point(mapping=aes(x=liveness, y=track_popularity))+geom_smooth(mapping=aes(x=liveness, y=track_popularity))+ggtitle("Track Popularity and Liveness")
+c8<-ggplot(data=dt)+geom_point(mapping=aes(x=valence, y=track_popularity))+geom_smooth(mapping=aes(x=valence, y=track_popularity))+ggtitle("Track Popularity and Valence")
+c9<-ggplot(data=dt)+geom_point(mapping=aes(x=tempo, y=track_popularity))+geom_smooth(mapping=aes(x=tempo, y=track_popularity))+ggtitle("Relationship between Track Popularity and Tempo")
+c10<-ggplot(data=dt)+geom_point(mapping=aes(x=duration_ms, y=track_popularity))+geom_smooth(mapping=aes(x=duration_ms, y=track_popularity))+ggtitle("Track Popularity and Duration")
+
+c1
+c2
+c3
+c4
+c5
+c6
+c7
+c8
+c9
+c10
+```
+
+***Fig13***
+
+```{r correlation-result}
+# Compute correlation coefficients
+cor_danceability <- cor(dt$danceability, dt$track_popularity)
+cor_energy <- cor(dt$energy, dt$track_popularity)
+cor_loudness <- cor(dt$loudness, dt$track_popularity)
+cor_speechiness <- cor(dt$speechiness, dt$track_popularity)
+cor_acousticness <- cor(dt$acousticness, dt$track_popularity)
+cor_instrumentalness <- cor(dt$instrumentalness, dt$track_popularity)
+cor_liveness <- cor(dt$liveness, dt$track_popularity)
+cor_valence <- cor(dt$valence, dt$track_popularity)
+cor_tempo <- cor(dt$tempo, dt$track_popularity)
+cor_duration_ms <- cor(dt$duration_ms, dt$track_popularity)
+
+# Print correlation coefficients
+cat("Correlation between Danceability and Track Popularity:", cor_danceability, "\n")
+cat("Correlation between Energy and Track Popularity:", cor_energy, "\n")
+cat("Correlation between Loudness and Track Popularity:", cor_loudness, "\n")
+cat("Correlation between Speechiness and Track Popularity:", cor_speechiness, "\n")
+cat("Correlation between Acousticness and Track Popularity:", cor_acousticness, "\n")
+cat("Correlation between Instrumentalness and Track Popularity:", cor_instrumentalness, "\n")
+cat("Correlation between Liveness and Track Popularity:", cor_liveness, "\n")
+cat("Correlation between Valence and Track Popularity:", cor_valence, "\n")
+cat("Correlation between Tempo and Track Popularity:", cor_tempo, "\n")
+cat("Correlation between Duration and Track Popularity:", cor_duration_ms, "\n")
+```
+
+
+
+```{r, scatterplots-modes, fig.width=12, fig.height=10}
+# Create a scatterplot for loudness vs. energy
+p1 <- ggplot(dt, aes(x = loudness, y = energy, color = factor(mode))) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("0" = "#ff0096", "1" = "#4e2f41")) +
+  labs(x = "Loudness", y = "Energy") +
+  theme_minimal() +
+  ggtitle("Danceability vs. Energy") +
+  theme(legend.position = "none")
+
+p2 <- ggplot(dt, aes(x = danceability, y = energy, color = factor(mode))) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("0" = "#ff0096", "1" = "#4e2f41")) +
+  labs(x = "Danceability", y = "Energy") +
+  theme_minimal() +
+  ggtitle("Danceability vs. Energy") +
+  theme(legend.position = "none")
+
+p3 <- ggplot(dt, aes(x = speechiness, y = acousticness, color = factor(mode))) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("0" = "#ff0096", "1" = "#4e2f41")) +
+  labs(x = "Speechiness", y = "Acousticness") +
+  theme_minimal() +
+  ggtitle("Danceability vs. Energy") +
+  theme(legend.position = "none")
+
+p4 <- ggplot(dt, aes(x = liveness, y = tempo, color = factor(mode))) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("0" = "#ff0096", "1" = "#4e2f41"), name = "Mode") +
+  labs(x = "Liveness", y = "Tempo") +
+  theme_minimal() +
+  ggtitle("Liveness vs. Tempo")
+ 
+p5 <- ggplot(dt, aes(x = danceability, y = tempo, color = factor(mode))) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("0" = "#ff0096", "1" = "#4e2f41")) +
+  labs(x = "Danceability", y = "Tempo") +
+  theme_minimal() +
+  ggtitle("Danceability vs. Energy") +
+  theme(legend.position = "none")
+
+p6 <- ggplot(dt, aes(x = loudness, y = liveness, color = factor(mode))) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("0" = "#ff0096", "1" = "#4e2f41")) +
+  labs(x = "Loudness", y = "Liveness") +
+  theme_minimal() +
+  ggtitle("Danceability vs. Energy") +
+  theme(legend.position = "none")
+
+grid_plots <- grid.arrange(
+  p1, p2, p3, p4, p5, p6,
+  nrow = 3, 
+  ncol = 2,
+  top = textGrob("Scatterplots", 
+                 gp = gpar(fontface = "bold", fontsize = 25))
+)
+```
+***Fig14***
+Figure 14 representsa strong positive correlation between loudness and energy, which is typical as louder tracks tend to be more energetic. The points are densely packed and increase together, indicating that as tracks get louder, they generally also exhibit higher energy.Correlation between danceability and energy,  appears moderately positive, indicating that tracks that are more danceable tend to also be more energetic. However, there is considerable variation, suggesting that while there is a tendency for these attributes to align, there are exceptions, such as energetic tracks that are not necessarily danceable and vice versa.Distribution that tracks with higher speechiness tend to have lower acousticness, and vice versa. This could reflect a division between spoken word or rap tracks (high speechiness, low acousticness) and more traditional acoustic music (low speechiness, high acousticness).Relationship between liveness and tempo is scattered with no clear trend, indicating that the presence of live audience sounds in a track does not depend on the tempo. This suggests a diverse range of live performance styles at various tempos.There is a less defined relationship between danceability and tempo. Points are spread widely, suggesting that tempo varies independently of how danceable a track is. This indicates that tracks can be danceable at a wide range of tempos.Points are primarily concentrated at the lower end of the liveness scale, indicating that most tracks in the dataset likely have a studio-produced quality rather than live performance sound.
+
+
+
+```{r heatmap-matrix}
+correlation_matrix <- cor(dt[, c('danceability', 'energy', 'track_popularity', 
+                                 'loudness', 'speechiness', 'acousticness', 
+                                 'instrumentalness', 'liveness', 'valence', 
+                                 'tempo', 'duration_ms')])
+corrplot(correlation_matrix, 
+         type = "upper",  # Display only the upper triangle
+         method = "color",  # Use color to fill squares
+         order = "alphabet", 
+         addCoef.col = "white",  # White color for coefficients
+         diag = FALSE, 
+         tl.srt = 45,  # Rotate text labels
+         tl.col = "black", 
+         col = colorRampPalette(c("midnightblue", "#ff0096"))(100), # Color gradient
+         cl.pos = 'r', # Position the color legend on the right
+         number.cex = 0.8, # Adjust the size of coefficient text
+         cl.cex = 0.8) # Adjust the size of the color legend text
+```
+
+***Fig15***
+
+Figure 25 represents correlation heatmap matrix. Acousticness and Energy equals to -0.57
+which indicates a strong negative correlation. As acousticness increases, energy typically decreases, which aligns with expectations as acoustic tracks are often less intense and quieter compared to electronic or amplified music. Energy and Loudness equals to 0.71, which indicates very strong positive correlation, suggesting that as tracks become more energetic, they also tend to be louder. This is common in genres like rock and electronic where both energy and loudness are high.
+
+The following hypothesis will be tested using the linear regression.
+
+Genre Impact Hypothesis:
+* H0: The genre of a song does not affect how quickly it trends on Spotify.
+* H1: Certain genres of music trend faster on Spotify than others.
+
+Song Features Hypothesis:
+* H0: The musical features of a song (such as tempo, duration, loudness) do not influence how quickly it reaches the top trending charts on Spotify.
+* H1: Specific musical features (like upbeat tempo, optimal duration) are associated with faster trending on Spotify.
+
+```{r data-reg}
+data_reg<-certain_genre%>%select(!c("year","artist_name","album"))
+md<-lm( track_popularity~., data=data_reg)
+md_f<-stats::step(md, direction="backward")
+summary(md)
+```
+
+The F-statistic tests the overall significance of the regression model. The low p-value (< 2.2e-16) suggests that at least one of the predictors is significantly related to track popularity.
+Danceability is positively linked to popularity, with a one-unit increase correlating with a 12.46 increase in popularity. Energy, on the other hand, is negatively associated, suggesting higher energy leads to lower popularity.
+Predictors like key, mode, speechiness, acousticness, liveness, valence, and tempo aren't statistically significant at the 0.05 level, meaning their impact on popularity is uncertain.
+Loudness and instrumentalness are significant predictors. A one-unit increase in loudness corresponds to a 1.912 increase in popularity, while instrumentalness increases lead to an 8.110 decrease.
+Certain artist genres, like Latin, Pop, R&B, Rap, and Rock, tend to have higher popularity. For example, Latin and Pop tracks see popularity increases of approximately 10.05 and 9.38, respectively, compared to other genres.
+
+# 1: Genre Impact Hypothesis:
+
+Null Hypothesis (H0): The genre of a song does not affect how quickly it trends on Spotify.
+Alternative Hypothesis (H1): Certain genres of music trend faster on Spotify than others.
+
+The regression results show that the coefficients for different genres are statistically significant. This suggests that the genre of a song does indeed have an impact on its popularity on Spotify.Therefore, we reject the null hypothesis (H0) in favor of the alternative hypothesis (H1). Certain genres of music do trend faster on Spotify than others.
+
+# 2: Song Features Hypothesis:
+
+Null Hypothesis (H0): The musical features of a song (such as tempo, duration, loudness) do not influence how quickly it reaches the top trending charts on Spotify.
+Alternative Hypothesis (H1): Specific musical features (like upbeat tempo, optimal duration) are associated with faster trending on Spotify.
+
+The regression results indicate that several musical features, such as danceability, energy, instrumentalness, and duration_ms, have statistically significant coefficients.
+This suggests that specific musical features do influence how quickly a song trends on Spotify.Therefore, we reject the null hypothesis (H0) in favor of the alternative hypothesis (H1). Specific musical features are associated with faster trending on Spotif
+
+
+# KMeans Clustering Analysis
+
+
+```{r clustering-k}
+spotify_data_30 <- unique(certain_genre)
+# Exclude non-numeric columns before scaling
+numeric_features <- spotify_data_30[, sapply(spotify_data_30, is.numeric)]
+# Scale the numeric features
+scaled_features <- scale(numeric_features)
+#Perform t-SNE for dimensionality reduction
+```
+Here we selected the numeric variables from our data set and scaled them for the clustering analysis
+
+```{r clustering-vis}
+fviz_nbclust(scaled_features, FUN = hcut, method = "silhouette")
+fviz_nbclust(scaled_features, FUN = hcut, method = "wss")
+```
+
+***Fig16***
+
+Figure 26 illustrates the exploration of an optimal number of clusters for clustering analysis through the application of two prominent methods: the elbow method and the silhouette method. Upon analyzing the results from the elbow method, it was determined that six clusters would be the most suitable choice for clustering analysis.
+
+```{r fitting-clustering}
+# Fit K-means clustering model with 6 clusters
+kmeans_model <- kmeans(scaled_features, centers = 6)
+spotify_data_30$cluster <- kmeans_model$cluster
+```
+
+In this section, K-means clustering was performed, and the resulting clusters were appended to the dataset. This step was undertaken with the intention of utilizing these clusters in the subsequent machine learning analysis.
+
+```{r t-sne}
+# Subset spotify_data to match the number of rows in tsne_result$Y
+tsne_result <- Rtsne::Rtsne(as.matrix(scaled_features), dims = 2, perplexity = 30, theta = 0.5, max_iter = 1000, verbose = TRUE, pca = FALSE, check_duplicates = FALSE)
+spotify_data_subset <- spotify_data_30[1:nrow(tsne_result$Y), ]
+# Plot the t-SNE result
+ggplot() +
+  geom_point(data = spotify_data_subset, aes(x = tsne_result$Y[, 1], y = tsne_result$Y[, 2], color = as.factor(cluster))) +
+  labs(x = "t-SNE Dimension 1", y = "t-SNE Dimension 2", title = "t-SNE Visualization with Clusters") +
+  theme_minimal()
+```
+
+***Fig17***
+
+Figure 27 visualized aids in understanding the underlying structure of the data, revealing clusters or patterns that may not be discernible in the original feature space. It's evident that the clusters are well-defined using the k-means method.
+
+In this section, t-Distributed Stochastic Neighbor Embedding (t-SNE) analysis was conducted on a subset of Spotify data. The analysis involved performing t-SNE dimensionality reduction on scaled features using the Rtsne package, with parameters such as perplexity, theta, and maximum iterations set accordingly. Subsequently, the resulting two-dimensional t-SNE representation of the data points was visualized, with colors indicating their assigned clusters.
+
+# Fit Agglomerative Clustering
+
+```{r t-sne-agglomerative}
+agglomerative_model <- hclust(dist(scaled_features))
+cluster_labels <- cutree(agglomerative_model, k = 6)
+spotify_data_30$cluster_agglomerative <- as.factor(cluster_labels)
+ggplot(spotify_data_30, aes(x = tsne_result$Y[, 1], y = tsne_result$Y[, 2], color = cluster_agglomerative)) +
+  geom_point() +
+  scale_color_discrete(name = "Cluster (Agglomerative)") +
+  labs(x = "t-SNE Dimension 1", y = "t-SNE Dimension 2", title = "t-SNE Visualization with Agglomerative Clustering") +   
+ theme_minimal()
+
+```
+***Fig18***
+
+Figure 28 represents the visualization of the agglomerative clustering. Upon observation, it's evident that the points are not well partitioned when compared to the K-means clustering. Therefore, the K-Means clusters will be used for further analysis.
+
+# Machine learning
+```{r}
+spotify_data_30$key<-as.factor(spotify_data_30$key)
+spotify_data_30$mode<-as.factor(spotify_data_30$mode)
+columns_to_remove <- c("album","artist_name","cluster_agglomerative")
+main <- select(spotify_data_30, -one_of(columns_to_remove))
+```
+
+Here, the categorical variable is converted to factors, followed by the selection of variables of interest.
+
+# Splitting into Training and Test
+```{r data-splitting}
+set.seed(10000)
+split_dt <- initial_split(main, prop = 0.70)
+trainset <- training(split_dt )
+testset <- testing(split_dt )
+```
+
+The set.seed(10000) function ensures reproducibility by setting the seed for random number generation. we used the initial_split() function from the 'rsample' package to divide the dataset into two parts, with 70% of the data allocated to the training set and the remaining 30% to the test set. The resulting training set is stored in the 'trainset' variable, while the test set is stored in the 'testset' variable
+
+# Data Pre-Processing
+```{r pre-processing}
+
+data_prep<- recipes::recipe(track_popularity~., data = trainset)%>%
+  step_dummy(all_nominal_predictors(), one_hot = T)%>%
+  step_zv(all_predictors()) %>%
+  step_center(all_numeric_predictors())%>%
+  step_scale(all_numeric_predictors())
+  
+
+cv_v <- vfold_cv(trainset, v = 5, repeats = 1)
+measure <- metric_set(rmse)
+```
+
+The process begins by defining a recipe named data_prep, aimed at preparing the data for modeling. The target variable is track_popularity, while all other variables serve as predictors. The recipe encompasses various steps: converting all nominal predictors into dummy variables (step_dummy), removing predictors with zero variance (step_zv), centering all numeric predictors (step_center), and scaling all numeric predictors to have unit variance (step_scale). Following the recipe definition, it is applied to the training dataset (trainset) using the prep() function. Additionally, cross-validation is conducted using a 5-fold validation (vfold_cv) with one repetition. The evaluation metric employed for assessing model performance is root mean squared error (rmse).
+
+# Random Forest Modelling
+```{r random-forest}
+# Tuning random forest Parameters
+rforest <- 
+  rand_forest(mtry = tune(),
+              trees = tune(),
+              min_n = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("ranger",  importance = "impurity")
+
+# Workflow
+rf_wf <- 
+  workflow() %>% 
+  add_recipe(data_prep) %>% 
+  add_model(rforest)
+
+# Parameters for grid search
+rand_grid <- grid_random(
+ mtry() %>% range_set(c( 1,  5)),
+  trees() %>% range_set(c( 100, 120)), 
+  min_n() %>% range_set(c(2,  10)),
+  size = 10)
+
+tune_random <- 
+  rf_wf %>% 
+  tune_grid(
+    resamples = cv_v, 
+    grid = rand_grid, 
+    ##control = ctrl, 
+    metrics = measure)
+
+show_best(tune_random)
+
+randomforest_fit <- rf_wf %>%
+  finalize_workflow(select_best(tune_random )) %>%
+  fit(trainset)
+
+#Performance of Random FOrest
+augment(randomforest_fit, new_data = testset) %>% rmse(truth = track_popularity, estimate = .pred)
+```
+A random forest regression model is set up and executed for predicting track popularity on Spotify. The model is defined with hyperparameters to be tuned, including mtry (the number of variables randomly sampled as candidates at each split), trees (the number of trees in the forest), and min_n (the minimum number of data points in terminal nodes). The workflow integrates data preparation steps and the random forest model. Grid search parameters are specified for tuning the model, utilizing a random grid search strategy. Subsequently, the model is tuned using cross-validation, and the best-performing model is selected. Finally, the performance of the tuned random forest model is evaluated using root mean squared error (RMSE) on a test dataset.
+
+# Tuning Xgboost
+
+```{r xgboost-model}
+xgboost_p <- 
+  boost_tree(mtry = tune(),
+              trees = tune(),
+              min_n = tune(),
+              learn_rate = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost")
+
+# Workflow
+xgb_wf <- 
+  workflow() %>% 
+  add_recipe(data_prep) %>% 
+  add_model(xgboost_p)
+
+# Parameters for grid search
+xgb_grid <- grid_random(
+ mtry() %>% range_set(c( 1,  5)),
+  trees() %>% range_set(c( 100, 120)), 
+  min_n() %>% range_set(c(2,  10)),
+ learn_rate() %>% range_set(c(0.01,  0.1)),
+  size = 10)
+
+tune_xgboost <- 
+  xgb_wf %>% 
+  tune_grid(
+    resamples = cv_v, 
+    grid = xgb_grid, 
+    ##control = ctrl, 
+    metrics = measure)
+
+
+show_best(tune_xgboost)
+
+xgboost_fit <- xgb_wf %>%
+  finalize_workflow(select_best(tune_xgboost )) %>%
+  fit(trainset)
+augment(xgboost_fit, new_data = testset) %>% rmse(truth = track_popularity, estimate = .pred)
+```
+
+Hyperparameter tuning and model fitting using the XGBoost algorithm for a regression task were conducted in this section. Initially, a boosted tree model was defined with parameters to be tuned, including mtry (number of variables randomly sampled as candidates at each split), trees (number of boosting iterations), min_n (minimum number of observations in a terminal node), and learn_rate (shrinkage parameter). The model's mode was set as regression, and the engine was specified as XGBoost. Subsequently, a workflow was constructed by adding a data preparation recipe and the XGBoost model. A grid of hyperparameters was defined for grid search, specifying ranges for each parameter.
+
+#Lasso
+```{r lasso-reg}
+tune_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+wef <- workflow() %>%
+  add_recipe(data_prep)%>%
+  add_model(tune_spec)
+
+lambda_grid <- grid_regular(penalty(), levels = 50)
+
+doParallel::registerDoParallel()
+set.seed(2020)
+
+las_grid <- tune_grid(
+  wef,
+  resamples = cv_v,
+  grid = lambda_grid
+)
+```
+
+```{r rmse-rsq}
+las_grid %>%
+  collect_metrics() %>%
+  ggplot(aes(penalty, mean, color = .metric)) +
+  geom_errorbar(aes(
+    ymin = mean - std_err,
+    ymax = mean + std_err
+  ),
+  alpha = 0.5
+  ) +
+  geom_line(size = 1.5) +
+  facet_wrap(~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() +
+  theme(legend.position = "none")
+```
+***Fig19***
+
+```{r lasso-fit}
+lasso_fit <- wef %>%
+  finalize_workflow(select_best(las_grid)) %>%
+  fit(trainset)
+augment(lasso_fit , new_data = testset) %>% rmse(truth = track_popularity, estimate = .pred)
+```
+
+The process began by defining a cross-validated linear regression model with penalty tuning using the glmnet engine. Subsequently, a workflow was constructed by adding a data preparation recipe and integrating the tuned regression model. A grid of regularization parameters (lambda) was created for tuning. Utilizing parallel processing, the workflow was tuned across multiple lambda values using cross-validation resampling. Following the selection of the best-performing model based on root mean squared error (RMSE), the workflow was finalized and fitted to the training dataset.
+
+# Examining the Most Important features
+
+```{r features-vip}
+library(vip)
+randomforest_fit  %>% extract_fit_parsnip() %>% vip(num_features = 5)
+```
+
+ ***Fig20***
+ 
+In Figure 30, the cluster variable created earlier stands out as the most influential, followed by the year of the song, acousticness, duration, and energy.
+
+# Time Series Analysis
+ 
+```{r avg-song-pop}
+dt_t<-dt%>%group_by(year) %>% summarise(avg_popularity = c(mean(track_popularity)))
+avg_p<-dt_t%>%select(avg_popularity)
+x <-ts(avg_p,start = c(2000),frequency = 1,end = c(2023))
+ts.plot(x, main = "Avg Song Popularity on Spotify (2000-2023)",xlab="Year", ylab=" Average Popularity")
+```
+
+ ***Fig21***
+ 
+Figure 31 represents an irregular pattern of song popularity from year 2000 down to year 2020.
+
+# ACF
+
+```{r acf-vis}
+acf(x, lag.max = 200,type = c("correlation", "covariance", "partial"),plot = TRUE, na.action = na.fail, demean = TRUE)
+```
+ ***Fig22***
+ 
+he ACF plot, depicted in Figure 32, truncates after lag 3, indicating a moving average of order 3.
+
+#  PACF
+
+```{r pcf-vis}
+pacf(x,lag.max = 50)
+```
+***Fig23***
+
+The PACF plot, depicted in Figure 33 suggest an AR of order 1 considering where it cut off.
+
+```{r auto-arima}
+fit.arima = auto.arima(x, stepwise = FALSE, approximation = FALSE)
+fit.arima
+```
+An ARIMA model is being applied to the dataset, with the auto.arima() function used for automatic selection. The best model identified is ARIMA (1,0,0), indicating a strong positive relationship between the current value and its lagged value at lag 1, with an autoregressive coefficient of 0.8643. This implies a tendency for the series to persist in its trends.
+
+
+```{r forecast-plot}
+arima.forecast = forecast(fit.arima, h = 8)
+autoplot(arima.forecast) + ylab("Average Popularity") + xlab("Year")
+```
+***Fig24***
+
+In the forecast for the next 8 years, the popularity of songs on Spotify is expected to decrease, possibly due to heightened competition in the industry.
+
+
+
+
+
+
+
+
+
+
+
+
+
+

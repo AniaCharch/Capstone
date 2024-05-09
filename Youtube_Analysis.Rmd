@@ -1,0 +1,344 @@
+---
+title: "YouTube Analysis"
+author: "Anna Charchyan"
+date: "2024-04-23"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(patchwork)
+library(ggplot2)
+library(ggthemes)
+library(hrbrthemes)
+library(lubridate)
+library(forecast)
+library(Rtsne)
+library(stats)
+library(cluster)
+library(factoextra)
+library(tidymodels)
+library(corrplot)
+library(forcats)
+```
+
+
+```{r}
+#loading the data data set 
+yt_data_us19 <- read.csv("2019-YT-trending-videos-US_111.csv", header = TRUE)
+yt_data_gb19 <- read.csv("2019-YT-trending-videos-GB_111.csv", header = TRUE)
+yt_data_us <- read.csv("USvideos_111.csv", header = TRUE)
+yt_data_gb <- read.csv("GBvideos_111.csv", header = TRUE)
+```
+
+#Data Cleaning and Pre Processsing
+
+```{r data-cleaning}
+yt_data_gb19 <- yt_data_gb19 %>%
+  rename(
+    publish_time = publishedAt,
+    channel_title = channelTitle,
+    views = view_count
+  ) %>%
+  select(-channelId)
+
+yt_data_us19 <- yt_data_us19 %>%
+  rename(
+    publish_time = publishedAt,
+    channel_title = channelTitle,
+    views = view_count
+  )%>%
+  select(-channelId)
+
+yt_data_us <- rename(yt_data_us, category = category_id)
+
+# Create a named vector with the mappings
+category_mapping <- c(
+  `1` = "Film & Animation",
+  `2` = "Autos & Vehicles",
+  `10` = "Music",
+  `17` = "Sports",
+  `18` = "Short Movies",
+  `19` = "Travel & Events",
+  `20` = "Gaming",
+  `21` = "Videoblogging",
+  `22` = "People & Blogs",
+  `23` = "Comedy",
+  `24` = "Entertainment",
+  `25` = "News & Politics",
+  `26` = "Howto & Style",
+  `27` = "Education",
+  `28` = "Science & Technology",
+  `29` = "Nonprofits & Activism",
+  `30` = "Movies",
+  `31` = "Anime/Animation",
+  `32` = "Action/Adventure",
+  `33` = "Classics",
+  `34` = "Comedy",
+  `35` = "Documentary",
+  `36` = "Drama",
+  `37` = "Family",
+  `38` = "Foreign",
+  `39` = "Horror",
+  `40` = "Sci-Fi/Fantasy",
+  `41` = "Thriller",
+  `42` = "Shorts",
+  `43` = "Shows",
+  `44` = "Trailers"
+)
+# Replace the numerical values with category names
+yt_data_us$category <- category_mapping[as.character(yt_data_us$category)]
+
+yt_data_us <- yt_data_us %>%
+    rename(views = view_count,
+           publish_time = publish_at)
+
+yt_data_gb <- rename(yt_data_gb, category = category_id)
+
+# Create a named vector with the mappings
+category_mapping <- c(
+  `1` = "Film & Animation",
+  `2` = "Autos & Vehicles",
+  `10` = "Music",
+  `17` = "Sports",
+  `18` = "Short Movies",
+  `19` = "Travel & Events",
+  `20` = "Gaming",
+  `21` = "Videoblogging",
+  `22` = "People & Blogs",
+  `23` = "Comedy",
+  `24` = "Entertainment",
+  `25` = "News & Politics",
+  `26` = "Howto & Style",
+  `27` = "Education",
+  `28` = "Science & Technology",
+  `29` = "Nonprofits & Activism",
+  `30` = "Movies",
+  `31` = "Anime/Animation",
+  `32` = "Action/Adventure",
+  `33` = "Classics",
+  `34` = "Comedy",
+  `35` = "Documentary",
+  `36` = "Drama",
+  `37` = "Family",
+  `38` = "Foreign",
+  `39` = "Horror",
+  `40` = "Sci-Fi/Fantasy",
+  `41` = "Thriller",
+  `42` = "Shorts",
+  `43` = "Shows",
+  `44` = "Trailers"
+)
+
+# Replace the numerical values with category names
+yt_data_gb$category <- category_mapping[as.character(yt_data_gb$category)]
+
+```
+
+
+```{r}
+combined_yt<-bind_rows(yt_data_gb, yt_data_us, yt_data_gb19, yt_data_us19)
+```
+
+
+In this part, we combine the datasets.
+
+```{r}
+channel_stats <- combined_yt%>%group_by(channel_title) %>%summarise(trending_count = n(), total_views = sum(views, na.rm = TRUE) ) %>% arrange(desc(trending_count)) %>% slice_max(order_by = trending_count, n = 50) # Sum of views, removing NAs
+
+```
+
+```{r, top-50-channels, warning=FALSE, message=TRUE, fig.width=12, fig.height=10}
+# Reorder channel_title by total_views in decreasing order
+channel_stats$channel_title <- fct_reorder(channel_stats$channel_title, channel_stats$total_views, .desc = TRUE)
+
+# Create a bar plot with gradient fill
+ggplot(channel_stats, aes(x = channel_title, y = total_views, fill = total_views)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Channel Title", y = "Total Views", title = "Top 50 YouTube Channels by Total Views") +
+  scale_y_continuous(labels = scales::comma) + # Format Y axis labels to display standard numbers
+  scale_fill_gradient(low = "#351c75", high = "#ff0096") +  # Add gradient fill
+  theme(axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        axis.text.x = element_text(angle = 75, hjust = 1, size = 13),  # Rotate x labels for better visibility
+        legend.position = "none")  # Hide the legend
+```
+
+The bar plot above shows the Top 50 Youtube Channels by Total views, Marvel entertainment and MrBeast have highest total views in the data.
+
+
+Here we are interested in VEVO videos, we group the filtered data by the channel_title. For each group, it calculates several summary statistics, including the count of distinct video_ids, the total number of trending days, and the cumulative sums of views, likes, dislikes, and comments
+
+```{r}
+main_yt<-combined_yt %>% filter(grepl("VEVO", channel_title)) %>%group_by(channel_title) %>% summarise(video_count = n_distinct(video_id), total_trending_days = n(), total_views = sum(views, na.rm = TRUE) , total_likes = sum(likes, na.rm = TRUE) , total_dislikes = sum(dislikes , na.rm = TRUE) , total_comments = sum(comment_count , na.rm = TRUE))
+```
+
+```{r}
+vevo_data <- combined_yt %>%
+  filter(grepl("VEVO", channel_title)) %>%
+  group_by(channel_title) %>%
+  summarise(
+    video_count = n_distinct(video_id),       # Count unique video IDs for number of songs
+    total_trending_days = n(),                # Count total entries as total trending days
+    total_views = sum(views, na.rm = TRUE)    # Total views might help to select top channels
+  ) %>%
+  arrange(desc(total_views)) %>%
+  slice_max(order_by = total_views, n = 50)
+```
+
+```{r}
+vevo_data_long <- vevo_data %>%
+  pivot_longer(
+    cols = c(video_count, total_trending_days),
+    names_to = "metric",
+    values_to = "value"
+  )
+```
+
+```{r number-vevo}
+vevo_artists <- combined_yt %>%
+  filter(grepl("VEVO", channel_title)) %>%
+  distinct(channel_title) %>%  # Get distinct channel titles
+  summarise(number_of_vevo_artists = n_distinct(channel_title))  # Count distinct artists
+
+# View the number of unique VEVO artists
+print(vevo_artists)
+```
+
+```{r, vevo-channels, warning=FALSE, message=TRUE, fig.width=12, fig.height=10}
+# Create a stacked bar plot with custom colors and labels on each segment
+ggplot(vevo_data_long, aes(x = channel_title, y = value, fill = metric)) +
+  geom_bar(stat = "identity") +  # Use geom_bar with stat="identity" for pre-summarized data
+  
+  # Add text labels above each segment with conditional coloring
+  geom_text(aes(label = value, y = value, color = metric),  # Add color aesthetic within geom_text
+            position = position_stack(vjust = 1.05),  # Position labels just above the bars
+            size = 2.5,  # Set text size
+            show.legend = FALSE) +  # Hide the legend for text colors
+  
+  labs(x = "Channel Title", y = "Count", title = "Top 30 VEVO Channels: Video Count vs. Trending Days") +
+  scale_fill_manual(values = c("video_count" = "#bd328c", "total_trending_days" = "#745085")) +  # Custom bar colors
+  scale_color_manual(values = c("video_count" = "white", "total_trending_days" = "black")) +  # Custom text colors
+  
+  # Improve X-axis labels readability and adjust theme settings
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        plot.title = element_text(size = 14), 
+        axis.title = element_text(size = 12),
+        plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white", color = "white"),
+        legend.position = "right")
+```
+
+```{r heatmap-matrix}
+# Compute the correlation matrix for specified variables in the dataset
+correlation_matrix <- cor(main_yt[, c('video_count', 'total_trending_days', 'total_views', 
+                                      'total_likes', 'total_dislikes', 'total_comments')])
+
+# Plotting the lower triangle of the correlation matrix
+corrplot(correlation_matrix, 
+         type = "upper",  # Display only the lower triangle
+         method = "color",  # Use color to fill squares
+         order = "alphabet", 
+         addCoef.col = "white",  # White color for coefficients
+         diag = FALSE, 
+         tl.srt = 45,  # Rotate text labels
+         tl.col = "black", 
+         col = colorRampPalette(c("midnightblue","cyan", "#ff0096"))(100), # Color gradient
+         cl.pos = 'r', # Position the color legend on the right
+         number.cex = 0.8, # Adjust the size of coefficient text
+         cl.cex = 0.8) # Adjust the size of the color legend text
+```
+
+
+```{r, relationships-features, warning=FALSE, message=TRUE, fig.width=12, fig.height=10}
+c1<-ggplot(data=main_yt)+geom_point(mapping=aes(x=video_count, y=total_trending_days))+geom_smooth(mapping=aes(x=video_count, y=total_trending_days))+ggtitle("Video count")
+c2<-ggplot(data=main_yt)+geom_point(mapping=aes(x=total_views, y=total_trending_days))+geom_smooth(mapping=aes(x=total_views, y=total_trending_days))+ggtitle("Total views")
+c3<-ggplot(data=main_yt)+geom_point(mapping=aes(x=total_likes, y=total_trending_days))+geom_smooth(mapping=aes(x=total_likes, y=total_trending_days))+ggtitle("Total likes")
+c4<-ggplot(data=main_yt)+geom_point(mapping=aes(x=total_dislikes, y=total_trending_days))+geom_smooth(mapping=aes(x=total_dislikes, y=total_trending_days))+ggtitle("Total dislikes")
+c5<-ggplot(data=main_yt)+geom_point(mapping=aes(x=total_comments, y=total_trending_days))+geom_smooth(mapping=aes(x=total_comments, y=total_trending_days))+ggtitle("Total Comments")
+
+c1
+c2
+c3
+c4
+c5
+
+cor(main_yt$video_count, main_yt$total_trending_days)
+cor(main_yt$total_views, main_yt$total_trending_days)
+cor(main_yt$total_likes, main_yt$total_trending_days)
+cor(main_yt$total_dislikes, main_yt$total_trending_days)
+cor(main_yt$total_comments, main_yt$total_trending_days)
+```
+
+The correlation between video_count and total_trending_days is 0.909, indicating a strong positive linear relationship. This suggests that as the number of videos increases, the total number of days those videos trend on YouTube also tends to increase significantly.
+
+The correlation between total_views and total_trending_days is 0.638, indicating a moderate positive linear relationship. This suggests that there is a tendency for videos with more views to trend for a longer duration
+
+The correlation between total_likes and total_trending_days is 0.715, indicating a moderate positive linear relationship. This suggests that videos with more likes tend to trend for a longer duration on YouTube
+
+The correlation between total_dislikes and total_trending_days is 0.603, indicating a moderate positive linear relationship. This suggests that videos with more dislikes tend to trend for a longer duration
+
+Finally, the correlation between total_comments and total_trending_days is 0.632, indicating a moderate positive linear relationship. This suggests that videos with more comments tend to trend for a longer duration.
+
+#K-Means Clustering
+
+```{r k-clustering}
+main_ytt<-unique(main_yt)
+numeric_features2 <- main_ytt[, sapply(main_ytt, is.numeric)]
+scaled_features2 <- scale(numeric_features2)
+```
+In this part,  we select only the numeric columns from data. Finally, we scale the numeric features in  using z-score normalization.
+```{r clustering-vis}
+fviz_nbclust(scaled_features2, FUN = hcut, method = "wss")
+fviz_nbclust(scaled_features2, FUN = hcut, method = "silhouette")
+```
+From the Elbow method and Silhouette method, three clusters were clearly identified, hence we will be selecting three clusters as our optimal clusters.
+
+```{r}
+optimal_k=3
+kmeans_model <- kmeans(scaled_features2, centers = optimal_k)
+main_ytt$cluster <- as.factor(kmeans_model$cluster)
+```
+
+# visualizing the Clustering 
+```{r t-sne-yt}
+tsne_result <- Rtsne::Rtsne(as.matrix(scaled_features2), dims = 2, perplexity = 30, theta = 0.5, max_iter = 1000, verbose = TRUE, pca = FALSE, check_duplicates = FALSE)
+
+ggplot(main_ytt, aes(x = tsne_result$Y[, 1], y = tsne_result$Y[, 2], color = cluster)) +geom_point() +scale_color_discrete(name = "Cluster") +labs(x = "t-SNE Dimension 1", y = "t-SNE Dimension 2", title = "t-SNE Visualization with Clusters") + 
+    theme_minimal()
+```
+Here we created a scatter plot using ggplot2, visualizing the t-SNE dimensions as points colored by their assigned cluster labels from the cluster variable in the dataset. We can see that the clusters are well partitions using K-means clustering. 
+
+
+# Regression Analysis
+
+```{r reg-analysis}
+model <- lm(total_trending_days ~ video_count+total_views +total_likes + total_dislikes + total_comments + cluster, data = main_ytt)
+summary(model)
+```
+
+```{r reg-analysis-2}
+# Building the regression model with the cluster factor
+model_refined <- lm(total_trending_days ~ video_count + cluster, data = main_ytt)
+
+# Displaying the summary of the refined model
+summary(model_refined)
+
+```
+
+
+
+Video Count: For every one-unit increase in video_count, total_trending_days is expected to increase by approximately 13.82 units. Hence the video count plays a major role on trending days.
+
+Total Views, Likes, Dislikes, and Comments: These coefficients are not statistically significant at the 5% level of significance (p > 0.05), suggesting that there is insufficient evidence to conclude that these predictors have a significant linear relationship with total_trending_days.
+
+Clusters 2 and 3: Cluster 2 has a negative coefficient, indicating that it is associated with a decrease in total_trending_days compared to Cluster 1. Similarly, Cluster 3 also has a negative coefficient, suggesting a larger decrease in total_trending_days compared to Cluster 1.
+
+The R-squared value (0.8696) indicates that approximately 86.96% of the variance in total_trending_days is explained by the predictors in the model.
+
+A large F-statistic (342.1) with a very low p-value (< 2.2e-16) suggests that the model as a whole is statistically significant and provides a better fit to the data than a model with no predictors.
