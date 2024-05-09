@@ -26,8 +26,8 @@ https://drive.google.com/drive/folders/1S5LvAm0WBBPBK_2cfed122vvWBECcOLQ?usp=sha
 
 
 
-## Setting up a R Environment
-To run this project, you will need R programming language, Rstudio and dependent packages. Follow these steps to set up your environment:
+## Setting up a R 
+To run this project, you will need R programming language, Rstudio. Follow these steps to set up R:
 
 1. **Install R**  
    Ensure that R is installed on your system. You can download it from [cran.r-project.org](https://cran.r-project.org/bin/windows/base/).
