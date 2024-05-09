@@ -34,19 +34,9 @@ To run this project, you will need R programming language, Rstudio and dependent
    
 2. **Install Rstudio**  
    Ensure that R is installed on your system. You can download it from [cran.r-project.org]([https://cran.r-project.org/bin/windows/base/](https://posit.co/download/rstudio-desktop/)).
-   
-3. **Open Visualizations.Rmd file in Rstudio**  
+
+4. **Download datasets from the above-provided link**
+
+5. **Open Spotify_Analysis.Rmd and Youtube_Analysis.Rmd in Rstudio**
   
-4. **Download Packrat to initialize environemnt**
-   
-   In R console 
-  ```bash
-  install.packages("packrat")
-  ```
-  
-4. **Initialize Environment and Install Required Packages**
-   In R console 
-    ```bash
-    packrat::restore()
-    ```
-5. **Run all chunks consecutively**
+6. **Run all chunks consecutively**
